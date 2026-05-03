@@ -5,7 +5,7 @@ import { motion } from 'motion/react';
 import { Globe, BarChart3, Zap, Cpu, Sun, Moon } from 'lucide-react';
 import Switch from '@/components/ui/switch';
 import ButtonSocialIconDemo from '@/components/ui/social-icon';
-import logo from './assets/logo.png';
+import logo from './assets/logo.jpg';
 
 type QuizState = 'landing' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights';
 
