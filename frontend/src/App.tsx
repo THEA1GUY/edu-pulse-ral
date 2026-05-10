@@ -9,7 +9,7 @@ import logo from './assets/logo.jpg';
 import { supabase } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 
-type QuizState = 'landing' | 'auth' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights' | 'learning_style_quiz';
+type QuizState = 'landing' | 'auth' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights' | 'learning_style_quiz' | 'student_dashboard';
 
 interface Question {
   id: number;
@@ -89,7 +89,7 @@ function App() {
       if (data.role === 'student' && !data.learning_style) {
         setViewState('learning_style_quiz');
       } else if (viewState === 'landing' || viewState === 'auth') {
-        setViewState(data.role === 'teacher' ? 'teacher_dashboard' : 'student_quiz');
+        setViewState(data.role === 'teacher' ? 'teacher_dashboard' : 'student_dashboard');
       }
     }
   };
@@ -160,8 +160,9 @@ function App() {
         .eq('id', session.user.id);
       
       if (error) throw error;
+      setLearningStyle(style);
       setUserRole('student');
-      setViewState('student_quiz');
+      setViewState('student_dashboard');
     } catch (error: any) {
       console.error('Failed to set learning style:', error.message);
     } finally {
@@ -381,6 +382,33 @@ function App() {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* STUDENT DASHBOARD */}
+      {viewState === 'student_dashboard' && (
+        <div className="container pt-32">
+          <div className="glass-panel" style={{textAlign: 'center', maxWidth: '700px'}}>
+            <div className="badge-ai mb-4">Student Portal</div>
+            <h2 style={{fontSize: '2rem', fontWeight: 800, marginBottom: '0.5rem'}}>
+              Welcome, {session?.user?.user_metadata?.full_name || session?.user?.email?.split('@')[0] || 'Student'} 👋
+            </h2>
+            <p style={{color: 'var(--text-muted)', marginBottom: '2rem'}}>
+              Your learning style: <strong style={{color: 'var(--primary)', textTransform: 'capitalize'}}>{learningStyle || 'Not set'}</strong>
+            </p>
+
+            <div style={{background: 'rgba(255,255,255,0.03)', borderRadius: '16px', border: '1px solid var(--glass-border)', padding: '3rem', marginBottom: '2rem'}}>
+              <svg width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" style={{margin: '0 auto 1rem', display: 'block', opacity: 0.4}}>
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+              </svg>
+              <h3 style={{fontWeight: 700, marginBottom: '0.5rem'}}>No Quizzes Assigned Yet</h3>
+              <p style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>Your teacher will assign quizzes to you soon. Check back later!</p>
+            </div>
+
+            <button className="btn-secondary" onClick={handleSignOut} style={{display: 'inline-flex', alignItems: 'center', gap: '0.5rem'}}>
+              <LogOut size={16} /> Sign Out
+            </button>
           </div>
         </div>
       )}
