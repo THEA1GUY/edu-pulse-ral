@@ -2,12 +2,14 @@ import { useState, useRef, useEffect } from 'react';
 import './App.css';
 import DemoOne from './demo';
 import { motion } from 'motion/react';
-import { Globe, BarChart3, Zap, Cpu, Sun, Moon } from 'lucide-react';
+import { Globe, BarChart3, Zap, Cpu, Sun, Moon, LogIn, LogOut, User } from 'lucide-react';
 import Switch from '@/components/ui/switch';
 import ButtonSocialIconDemo from '@/components/ui/social-icon';
 import logo from './assets/logo.jpg';
+import { supabase } from '@/lib/supabase';
+import { Session } from '@supabase/supabase-js';
 
-type QuizState = 'landing' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights';
+type QuizState = 'landing' | 'auth' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights';
 
 interface Question {
   id: number;
@@ -29,8 +31,39 @@ function App() {
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [fileName, setFileName] = useState<string | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSignUp, setIsSignUp] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
+    });
+
+    // Test connection
+    const testConnection = async () => {
+      const { data, error } = await supabase.from('connection_test').select('*').limit(1);
+      if (error) {
+        console.error('Supabase connection test failed:', error.message);
+      } else {
+        console.log('Supabase connection test successful!', data);
+      }
+    };
+    testConnection();
+
+    return () => subscription.unsubscribe();
+  }, []);
 
   useEffect(() => {
     if (theme === 'light') {
@@ -48,64 +81,190 @@ function App() {
     }
   };
 
-  const handleGenerateQuiz = () => {
+  const handleAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setAuthError(null);
+    
+    try {
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (error) throw error;
+        // If sign up successful, we need to create a profile
+        if (data.user) {
+          await supabase.from('profiles').insert({
+            id: data.user.id,
+            full_name: email.split('@')[0],
+            role: 'teacher' // Default to teacher for now
+          });
+        }
+        alert('Check your email for the confirmation link!');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        setViewState('teacher_dashboard');
+      }
+    } catch (error: any) {
+      setAuthError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setViewState('landing');
+  };
+
+  const handleGoogleSignIn = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+      if (error) throw error;
+    } catch (error: any) {
+      setAuthError(error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGenerateQuiz = async () => {
+    if (!session) {
+      setViewState('auth');
+      return;
+    }
+
     setViewState('generating');
     
-    // Simulate Agentic AI generation delay
-    setTimeout(() => {
-      setQuestions([
+    try {
+      // 1. Create the Quiz Entry
+      const { data: quiz, error: quizError } = await supabase
+        .from('quizzes')
+        .insert({
+          teacher_id: session.user.id,
+          topic: topic,
+          difficulty: difficulty as any,
+          language: targetLanguage,
+          is_bilingual: isBilingual
+        })
+        .select()
+        .single();
+
+      if (quizError) throw quizError;
+
+      // 2. Generate Questions (Mock AI logic but real DB insert)
+      const mockQuestions = [
         {
-          id: 1,
-          text: `In the process of photosynthesis, what is the primary role of chlorophyll?`,
-          translation: `A cikin tsarin photosynthesis, mene ne babban aikin chlorophyll?`,
+          quiz_id: quiz.id,
+          question_text: `In the process of photosynthesis, what is the primary role of chlorophyll?`,
+          translation_text: `A cikin tsarin photosynthesis, mene ne babban aikin chlorophyll?`,
           options: [
             "To absorb water from the soil",
             "To capture light energy from the sun",
             "To convert oxygen into carbon dioxide",
             "To act as a structural component of the plant cell"
           ],
-          correctAnswerIndex: 1
+          correct_answer_index: 1
         },
         {
-          id: 2,
-          text: "Which of the following is considered a product of the light-dependent reactions?",
-          translation: "Wanne ne daga cikin waɗannan ake ɗauka a matsayin samfurin halayen dogaro da haske?",
+          quiz_id: quiz.id,
+          question_text: "Which of the following is considered a product of the light-dependent reactions?",
+          translation_text: "Wanne ne daga cikin waɗannan ake ɗauka a matsayin samfurin halayen dogaro da haske?",
           options: [
             "Glucose",
             "Carbon dioxide",
             "ATP and NADPH",
             "Water"
           ],
-          correctAnswerIndex: 2
+          correct_answer_index: 2
         },
         {
-          id: 3,
-          text: "Where precisely does the Calvin cycle take place inside the chloroplast?",
-          translation: "A ina ne ainihin zagayowar Calvin ke faruwa a cikin chloroplast?",
+          quiz_id: quiz.id,
+          question_text: "Where precisely does the Calvin cycle take place inside the chloroplast?",
+          translation_text: "A ina ne ainihin zagayowar Calvin ke faruwa a cikin chloroplast?",
           options: [
             "Thylakoid membrane",
             "Outer membrane",
             "Stroma",
             "Granum"
           ],
-          correctAnswerIndex: 2
+          correct_answer_index: 2
         }
-      ]);
+      ];
+
+      const { data: questionsData, error: questionsError } = await supabase
+        .from('questions')
+        .insert(mockQuestions)
+        .select();
+
+      if (questionsError) throw questionsError;
+
+      // Map DB questions back to local state format
+      setQuestions(questionsData.map(q => ({
+        id: q.id,
+        quizId: q.quiz_id,
+        text: q.question_text,
+        translation: q.translation_text,
+        options: q.options,
+        correctAnswerIndex: q.correct_answer_index
+      })));
+      
       setViewState('student_quiz');
       setCurrentQuestionIdx(0);
       setAnswers({});
-    }, 3000);
+
+    } catch (error: any) {
+      console.error("Error generating quiz:", error.message);
+      alert("Failed to generate quiz in database. Make sure you have run the schema SQL.");
+      setViewState('teacher_dashboard');
+    }
   };
 
   const handleSelectAnswer = (optIndex: number) => {
     setAnswers({ ...answers, [currentQuestionIdx]: optIndex });
   };
 
-  const handleNextQuestion = () => {
+  const handleNextQuestion = async () => {
     if (currentQuestionIdx < questions.length - 1) {
       setCurrentQuestionIdx(currentQuestionIdx + 1);
     } else {
       setViewState('grading');
+      
+      // Save attempt to Supabase
+      if (session) {
+        try {
+          // Find the quiz ID from the first question (they all share the same quiz_id)
+          // We need to fetch the quiz_id which we stored in the question objects earlier
+          // Wait, I mapped them to local 'id' in questions array, but I need the quiz_id.
+          // Let's assume the questions state has the quiz_id or we track it.
+          // I'll update the questions state mapping to include quiz_id.
+          
+          const quizId = (questions[0] as any).quizId;
+          const score = calculateScore();
+          
+          await supabase.from('attempts').insert({
+            quiz_id: quizId,
+            student_id: session.user.id,
+            score: score,
+            answers: answers,
+            feedback: `Performance: ${score}% on ${topic}`
+          });
+        } catch (error) {
+          console.error("Error saving attempt:", error);
+        }
+      }
+
       setTimeout(() => {
         setViewState('results');
       }, 2000);
@@ -144,6 +303,21 @@ function App() {
             </div>
           )}
           <div style={{display: 'flex', gap: '1.5rem', alignItems: 'center'}}>
+             {session ? (
+               <div style={{display: 'flex', alignItems: 'center', gap: '1rem'}}>
+                 <div style={{fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                   <User size={14} />
+                   {session.user.email}
+                 </div>
+                 <button className="tab-btn" onClick={handleSignOut} style={{padding: '0.4rem 1rem', display: 'flex', alignItems: 'center', gap: '0.5rem'}}>
+                   <LogOut size={14} /> Sign Out
+                 </button>
+               </div>
+             ) : (
+               <button className="btn-primary" onClick={() => setViewState('auth')} style={{padding: '0.6rem 1.5rem', width: 'auto', fontSize: '0.9rem'}}>
+                 <LogIn size={16} /> Teacher Login
+               </button>
+             )}
              <div style={{display: 'flex', alignItems: 'center', gap: '0.75rem'}}>
                 <Moon size={14} className={theme === 'dark' ? 'text-primary' : 'text-muted'} />
                 <Switch 
@@ -316,6 +490,84 @@ function App() {
               <ButtonSocialIconDemo />
               <div className="text-sm opacity-60">© 2026 EDU•PULSE. All rights reserved.</div>
             </footer>
+          </div>
+        </div>
+      )}
+
+      {/* AUTH VIEW */}
+      {viewState === 'auth' && (
+        <div className="container pt-32">
+          <div className="glass-panel" style={{maxWidth: '450px'}}>
+            <div style={{textAlign: 'center', marginBottom: '2rem'}}>
+              <h2 style={{fontSize: '2rem', marginBottom: '0.5rem'}}>{isSignUp ? 'Join the Lab' : 'Welcome Back'}</h2>
+              <p style={{color: 'var(--text-muted)'}}>{isSignUp ? 'Create your teacher account' : 'Sign in to manage your assessments'}</p>
+            </div>
+            
+            <form onSubmit={handleAuth} style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+              <div className="form-group">
+                <label>Email Address</label>
+                <input 
+                  type="email" 
+                  className="input-field" 
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="teacher@school.edu"
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label>Password</label>
+                <input 
+                  type="password" 
+                  className="input-field" 
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                />
+              </div>
+              
+              {authError && (
+                <div style={{color: '#ef4444', fontSize: '0.85rem', background: 'rgba(239, 68, 68, 0.1)', padding: '0.75rem', borderRadius: '8px', border: '1px solid rgba(239, 68, 68, 0.2)'}}>
+                  {authError}
+                </div>
+              )}
+
+              <button className="btn-primary" type="submit" disabled={loading}>
+                {loading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
+              </button>
+
+              <div style={{display: 'flex', alignItems: 'center', gap: '1rem', margin: '1rem 0'}}>
+                <div style={{flex: 1, height: '1px', background: 'var(--glass-border)'}}></div>
+                <span style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>OR</span>
+                <div style={{flex: 1, height: '1px', background: 'var(--glass-border)'}}></div>
+              </div>
+
+              <button 
+                type="button" 
+                className="btn-secondary" 
+                onClick={handleGoogleSignIn}
+                style={{display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.75rem', width: '100%'}}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24">
+                  <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/>
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                </svg>
+                Continue with Google
+              </button>
+            </form>
+
+            <div style={{textAlign: 'center', marginTop: '2rem', fontSize: '0.9rem', color: 'var(--text-muted)'}}>
+              {isSignUp ? 'Already have an account?' : 'New to EDU•PULSE?'}
+              <button 
+                style={{background: 'none', border: 'none', color: 'var(--primary)', fontWeight: 700, marginLeft: '0.5rem', cursor: 'pointer'}}
+                onClick={() => setIsSignUp(!isSignUp)}
+              >
+                {isSignUp ? 'Sign In' : 'Sign Up'}
+              </button>
+            </div>
           </div>
         </div>
       )}
