@@ -25,6 +25,7 @@ interface Profile {
   full_name: string;
   role: 'teacher' | 'student';
   learning_style?: string;
+  class_code?: string;
 }
 
 interface Quiz {
@@ -96,7 +97,7 @@ function App() {
   const fetchProfile = async (uid: string) => {
     const { data, error } = await supabase
       .from('profiles')
-      .select('role, learning_style')
+      .select('role, learning_style, class_code')
       .eq('id', uid)
       .single();
     
@@ -116,7 +117,7 @@ function App() {
       }
 
       if (data.role === 'teacher') {
-        fetchStudents(uid);
+        fetchStudents(uid, data.class_code);
         fetchQuizzes();
       } else {
         fetchAssignedQuizzes(uid);
@@ -201,12 +202,19 @@ function App() {
 
 
 
-  const fetchStudents = async (userId: string) => {
-    const { data, error } = await supabase
+  const fetchStudents = async (userId: string, classCode?: string) => {
+    let query = supabase
       .from('profiles')
       .select('*')
-      .eq('role', 'student')
-      .eq('teacher_id', userId);
+      .eq('role', 'student');
+    
+    if (classCode) {
+      query = query.eq('class_code', classCode);
+    } else {
+      query = query.eq('teacher_id', userId);
+    }
+
+    const { data, error } = await query;
     if (!error && data) setStudents(data);
   };
 
@@ -820,6 +828,9 @@ function App() {
           <header className="header">
             <h1 className="animate-in">Teacher Command Center</h1>
             <p>Design assessments and track student cognitive profiles.</p>
+            <div style={{marginTop: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(99, 102, 241, 0.1)', padding: '0.5rem 1rem', borderRadius: '100px', border: '1px solid rgba(99, 102, 241, 0.2)', fontSize: '0.85rem', color: 'var(--primary)'}}>
+              <Zap size={14} /> <span>Your Class Tag: <strong>EDU-PULSE-2026</strong></span>
+            </div>
           </header>
 
           <div className="tabs-container mb-8" style={{display: 'flex', justifyContent: 'center', marginBottom: '2rem'}}>
