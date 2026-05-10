@@ -102,11 +102,15 @@ function App() {
       setUserRole(data.role as 'teacher' | 'student');
       setLearningStyle(data.learning_style as any);
       
-      // If student hasn't taken the learning style quiz, send them there
       if (data.role === 'student' && !data.learning_style) {
         setViewState('learning_style_quiz');
-      } else if (viewState === 'landing' || viewState === 'auth') {
-        setViewState(data.role === 'teacher' ? 'teacher_dashboard' : 'student_dashboard');
+      } else {
+        setViewState(prev => {
+          if (prev === 'landing' || prev === 'auth') {
+            return data.role === 'teacher' ? 'teacher_dashboard' : 'student_dashboard';
+          }
+          return prev;
+        });
       }
 
       if (data.role === 'teacher') {
@@ -165,7 +169,6 @@ function App() {
         if (data.user) {
           await fetchProfile(data.user.id);
         }
-        setViewState('teacher_dashboard');
       }
     } catch (error: any) {
       setAuthError(error.message);
@@ -565,7 +568,7 @@ function App() {
         <div className="landing-page">
           <DemoOne onLaunch={() => {
             if (session) {
-              setViewState(userRole === 'teacher' ? 'teacher_dashboard' : 'student_quiz');
+              setViewState(userRole === 'teacher' ? 'teacher_dashboard' : 'student_dashboard');
             } else {
               setViewState('auth');
             }
