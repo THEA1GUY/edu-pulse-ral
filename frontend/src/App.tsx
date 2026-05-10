@@ -205,7 +205,8 @@ function App() {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
-      .eq('role', 'student');
+      .eq('role', 'student')
+      .eq('teacher_id', session?.user.id);
     if (!error && data) setStudents(data);
   };
 
