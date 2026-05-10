@@ -27,7 +27,7 @@ function App() {
   const [difficulty, setDifficulty] = useState('Intermediate');
   const [targetLanguage, setTargetLanguage] = useState('Hausa');
   const [isBilingual, setIsBilingual] = useState(false);
-  const [questionType, setQuestionType] = useState<'objective' | 'essay'>('objective');
+  const [questionType, _setQuestionType] = useState<'objective' | 'essay'>('objective');
   
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
