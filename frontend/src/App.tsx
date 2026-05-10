@@ -11,6 +11,12 @@ import type { Session } from '@supabase/supabase-js';
 
 type QuizState = 'landing' | 'auth' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights' | 'learning_style_quiz' | 'student_dashboard';
 
+interface Question {
+  id: number;
+  text: string;
+  options: string[];
+  correctAnswerIndex: number;
+  translation?: string;
   visualPrompt?: string;
 }
 
@@ -45,6 +51,7 @@ function App() {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'teacher' | 'student' | null>(null);
   const [learningStyle, setLearningStyle] = useState<'visual' | 'auditory' | 'reading' | 'kinesthetic' | null>(null);
   const [students, setStudents] = useState<Profile[]>([]);
@@ -187,10 +194,7 @@ function App() {
     }
   };
 
-    } finally {
-      setLoading(false);
-    }
-  };
+
 
   const fetchStudents = async () => {
     const { data, error } = await supabase
