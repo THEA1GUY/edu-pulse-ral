@@ -11,13 +11,20 @@ import type { Session } from '@supabase/supabase-js';
 
 type QuizState = 'landing' | 'auth' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights' | 'learning_style_quiz' | 'student_dashboard';
 
-interface Question {
-  id: number;
-  text: string;
-  options: string[];
-  correctAnswerIndex: number;
-  translation?: string;
   visualPrompt?: string;
+}
+
+interface Profile {
+  id: string;
+  full_name: string;
+  role: 'teacher' | 'student';
+  learning_style?: string;
+}
+
+interface Quiz {
+  id: string;
+  topic: string;
+  created_at: string;
 }
 
 function App() {
@@ -38,9 +45,12 @@ function App() {
   const [password, setPassword] = useState('');
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [authError, setAuthError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'teacher' | 'student' | null>(null);
   const [learningStyle, setLearningStyle] = useState<'visual' | 'auditory' | 'reading' | 'kinesthetic' | null>(null);
+  const [students, setStudents] = useState<Profile[]>([]);
+  const [availableQuizzes, setAvailableQuizzes] = useState<Quiz[]>([]);
+  const [assignedQuizzes, setAssignedQuizzes] = useState<any[]>([]);
+  const [activeTab, setActiveTab] = useState<'create' | 'students'>('create');
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -90,6 +100,13 @@ function App() {
         setViewState('learning_style_quiz');
       } else if (viewState === 'landing' || viewState === 'auth') {
         setViewState(data.role === 'teacher' ? 'teacher_dashboard' : 'student_dashboard');
+      }
+
+      if (data.role === 'teacher') {
+        fetchStudents();
+        fetchQuizzes();
+      } else {
+        fetchAssignedQuizzes(uid);
       }
     }
   };
@@ -165,6 +182,99 @@ function App() {
       setViewState('student_dashboard');
     } catch (error: any) {
       console.error('Failed to set learning style:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchStudents = async () => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('role', 'student');
+    if (!error && data) setStudents(data);
+  };
+
+  const fetchQuizzes = async () => {
+    const { data, error } = await supabase
+      .from('quizzes')
+      .select('*')
+      .order('created_at', { ascending: false });
+    if (!error && data) setAvailableQuizzes(data);
+  };
+
+  const fetchAssignedQuizzes = async (uid: string) => {
+    const { data, error } = await supabase
+      .from('assignments')
+      .select(`
+        *,
+        quizzes (
+          id,
+          topic,
+          difficulty,
+          is_bilingual,
+          language
+        )
+      `)
+      .eq('student_id', uid)
+      .eq('status', 'pending');
+    
+    if (!error && data) setAssignedQuizzes(data);
+  };
+
+  const handleAssignQuiz = async (quizId: string, studentId: string) => {
+    if (!session) return;
+    try {
+      const { error } = await supabase
+        .from('assignments')
+        .insert({
+          quiz_id: quizId,
+          student_id: studentId,
+          teacher_id: session.user.id
+        });
+      if (error) {
+        if (error.code === '23505') alert('Quiz already assigned to this student.');
+        else throw error;
+      } else {
+        alert('Quiz assigned successfully!');
+        fetchStudents();
+      }
+    } catch (error: any) {
+      alert('Failed to assign quiz: ' + error.message);
+    }
+  };
+
+  const handleStartAssignedQuiz = async (assignment: any) => {
+    setLoading(true);
+    setViewState('generating');
+    try {
+      const { data: qData, error: qError } = await supabase
+        .from('questions')
+        .select('*')
+        .eq('quiz_id', assignment.quiz_id);
+      
+      if (qError) throw qError;
+
+      setTopic(assignment.quizzes.topic);
+      setTargetLanguage(assignment.quizzes.language);
+      setIsBilingual(assignment.quizzes.is_bilingual);
+      setQuestions(qData.map((q: any, idx: number) => ({
+        id: idx,
+        text: q.question_text,
+        options: q.options || [],
+        correctAnswerIndex: q.correct_answer_index || 0,
+        translation: q.translation_text,
+        visualPrompt: q.visual_prompt
+      })));
+      setViewState('student_quiz');
+    } catch (error: any) {
+      alert('Failed to load quiz: ' + error.message);
+      setViewState('student_dashboard');
     } finally {
       setLoading(false);
     }
@@ -398,12 +508,45 @@ function App() {
               Your learning style: <strong style={{color: 'var(--primary)', textTransform: 'capitalize'}}>{learningStyle || 'Not set'}</strong>
             </p>
 
-            <div style={{background: 'rgba(255,255,255,0.03)', borderRadius: '16px', border: '1px solid var(--glass-border)', padding: '3rem', marginBottom: '2rem'}}>
-              <svg width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" style={{margin: '0 auto 1rem', display: 'block', opacity: 0.4}}>
-                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
-              </svg>
-              <h3 style={{fontWeight: 700, marginBottom: '0.5rem'}}>No Quizzes Assigned Yet</h3>
-              <p style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>Your teacher will assign quizzes to you soon. Check back later!</p>
+            <div style={{background: 'rgba(255,255,255,0.03)', borderRadius: '16px', border: '1px solid var(--glass-border)', padding: '2rem', marginBottom: '2rem'}}>
+              <h3 style={{fontWeight: 700, marginBottom: '1.5rem', textAlign: 'left'}}>Assigned Assessments</h3>
+              
+              {assignedQuizzes.length === 0 ? (
+                <div style={{padding: '2rem', textAlign: 'center'}}>
+                  <svg width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" style={{margin: '0 auto 1rem', display: 'block', opacity: 0.4}}>
+                    <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                  </svg>
+                  <p style={{color: 'var(--text-muted)', fontSize: '0.9rem'}}>No quizzes assigned yet. Your teacher will notify you!</p>
+                </div>
+              ) : (
+                <div style={{display: 'flex', flexDirection: 'column', gap: '1rem'}}>
+                  {assignedQuizzes.map(assignment => (
+                    <div key={assignment.id} style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      background: 'rgba(255,255,255,0.05)',
+                      padding: '1.25rem',
+                      borderRadius: '12px',
+                      border: '1px solid var(--glass-border)'
+                    }}>
+                      <div style={{textAlign: 'left'}}>
+                        <div style={{fontWeight: 700, fontSize: '1.1rem'}}>{assignment.quizzes.topic}</div>
+                        <div style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
+                          Difficulty: {assignment.quizzes.difficulty} • {assignment.quizzes.is_bilingual ? 'Bilingual' : 'English'}
+                        </div>
+                      </div>
+                      <button 
+                        className="btn-primary" 
+                        style={{padding: '0.6rem 1.25rem', fontSize: '0.9rem'}}
+                        onClick={() => handleStartAssignedQuiz(assignment)}
+                      >
+                        Start Quiz
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <button className="btn-secondary" onClick={handleSignOut} style={{display: 'inline-flex', alignItems: 'center', gap: '0.5rem'}}>
@@ -665,10 +808,27 @@ function App() {
       {viewState === 'teacher_dashboard' && (
         <div className="container pt-32">
           <header className="header">
-            <h1 className="animate-in">Create Adaptive Assessment</h1>
-            <p>Upload source material and let AI generate personalized quizzes in seconds.</p>
+            <h1 className="animate-in">Teacher Command Center</h1>
+            <p>Design assessments and track student cognitive profiles.</p>
           </header>
-          <main className="glass-panel">
+
+          <div className="tabs-container mb-8" style={{display: 'flex', justifyContent: 'center', marginBottom: '2rem'}}>
+            <button 
+              className={`tab-btn ${activeTab === 'create' ? 'active' : ''}`}
+              onClick={() => setActiveTab('create')}
+            >
+              Generate Quiz
+            </button>
+            <button 
+              className={`tab-btn ${activeTab === 'students' ? 'active' : ''}`}
+              onClick={() => setActiveTab('students')}
+            >
+              My Students ({students.length})
+            </button>
+          </div>
+
+          {activeTab === 'create' ? (
+            <main className="glass-panel">
             <div className="form-grid">
               <div className="form-group">
                 <label>Topic / Subject</label>
@@ -738,6 +898,59 @@ function App() {
               Generate AI Assessment
             </button>
           </main>
+          ) : (
+            <main className="glass-panel">
+              <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+                <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem'}}>
+                  {students.map(student => (
+                    <div key={student.id} className="student-card" style={{
+                      background: 'rgba(255,255,255,0.03)',
+                      padding: '1.5rem',
+                      borderRadius: '16px',
+                      border: '1px solid var(--glass-border)'
+                    }}>
+                      <div style={{display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1rem'}}>
+                        <div style={{width: '40px', height: '40px', borderRadius: '50%', background: 'var(--primary-gradient)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem'}}>
+                          {student.full_name?.[0] || '?'}
+                        </div>
+                        <div>
+                          <div style={{fontWeight: 700}}>{student.full_name || 'Anonymous Student'}</div>
+                          <div style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>
+                            Style: <span style={{color: 'var(--primary)', textTransform: 'capitalize'}}>{student.learning_style || 'Not Set'}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{display: 'flex', flexDirection: 'column', gap: '0.5rem'}}>
+                        <label style={{fontSize: '0.8rem', color: 'var(--text-muted)'}}>Assign Existing Quiz</label>
+                        <div style={{display: 'flex', gap: '0.5rem'}}>
+                          <select 
+                            className="input-field" 
+                            style={{padding: '0.4rem 0.8rem', fontSize: '0.8rem'}}
+                            id={`quiz-select-${student.id}`}
+                          >
+                            {availableQuizzes.map(quiz => (
+                              <option key={quiz.id} value={quiz.id}>{quiz.topic}</option>
+                            ))}
+                          </select>
+                          <button 
+                            className="btn-primary" 
+                            style={{padding: '0.4rem 1rem', fontSize: '0.8rem'}}
+                            onClick={() => {
+                              const select = document.getElementById(`quiz-select-${student.id}`) as HTMLSelectElement;
+                              if (select.value) handleAssignQuiz(select.value, student.id);
+                            }}
+                          >
+                            Assign
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </main>
+          )}
         </div>
       )}
 
