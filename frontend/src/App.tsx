@@ -116,7 +116,7 @@ function App() {
       }
 
       if (data.role === 'teacher') {
-        fetchStudents();
+        fetchStudents(uid);
         fetchQuizzes();
       } else {
         fetchAssignedQuizzes(uid);
@@ -201,12 +201,12 @@ function App() {
 
 
 
-  const fetchStudents = async () => {
+  const fetchStudents = async (userId: string) => {
     const { data, error } = await supabase
       .from('profiles')
       .select('*')
       .eq('role', 'student')
-      .eq('teacher_id', session?.user.id);
+      .eq('teacher_id', userId);
     if (!error && data) setStudents(data);
   };
 
@@ -252,7 +252,7 @@ function App() {
         else throw error;
       } else {
         alert('Quiz assigned successfully!');
-        fetchStudents();
+        fetchStudents(session.user.id);
       }
     } catch (error: any) {
       alert('Failed to assign quiz: ' + error.message);
