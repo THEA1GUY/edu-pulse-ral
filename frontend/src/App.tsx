@@ -55,6 +55,7 @@ function App() {
   const [authError, setAuthError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'teacher' | 'student' | null>(null);
   const [learningStyle, setLearningStyle] = useState<'visual' | 'auditory' | 'reading' | 'kinesthetic' | null>(null);
+  const [classCode, setClassCode] = useState<string | null>(null);
   const [students, setStudents] = useState<Profile[]>([]);
   const [availableQuizzes, setAvailableQuizzes] = useState<Quiz[]>([]);
   const [assignedQuizzes, setAssignedQuizzes] = useState<any[]>([]);
@@ -104,6 +105,7 @@ function App() {
     if (!error && data) {
       setUserRole(data.role as 'teacher' | 'student');
       setLearningStyle(data.learning_style as any);
+      setClassCode(data.class_code);
       
       if (data.role === 'student' && !data.learning_style) {
         setViewState('learning_style_quiz');
@@ -829,7 +831,7 @@ function App() {
             <h1 className="animate-in">Teacher Command Center</h1>
             <p>Design assessments and track student cognitive profiles.</p>
             <div style={{marginTop: '1rem', display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(99, 102, 241, 0.1)', padding: '0.5rem 1rem', borderRadius: '100px', border: '1px solid rgba(99, 102, 241, 0.2)', fontSize: '0.85rem', color: 'var(--primary)'}}>
-              <Zap size={14} /> <span>Your Class Tag: <strong>EDU-PULSE-2026</strong></span>
+              <Zap size={14} /> <span>Your Class Tag: <strong>{classCode || 'NO TAG ASSIGNED'}</strong></span>
             </div>
           </header>
 
