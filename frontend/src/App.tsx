@@ -37,6 +37,7 @@ function App() {
   const [isSignUp, setIsSignUp] = useState(false);
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [userRole, setUserRole] = useState<'teacher' | 'student' | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -49,6 +50,11 @@ function App() {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
+      if (session) {
+        fetchProfile(session.user.id);
+      } else {
+        setUserRole(null);
+      }
     });
 
     // Test connection
@@ -64,6 +70,22 @@ function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  const fetchProfile = async (uid: string) => {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', uid)
+      .single();
+    
+    if (!error && data) {
+      setUserRole(data.role as 'teacher' | 'student');
+      // Auto-redirect to dashboard if they are already logged in on landing
+      if (viewState === 'landing' || viewState === 'auth') {
+        setViewState(data.role === 'teacher' ? 'teacher_dashboard' : 'student_quiz');
+      }
+    }
+  };
 
   useEffect(() => {
     if (theme === 'light') {
@@ -98,16 +120,20 @@ function App() {
           await supabase.from('profiles').insert({
             id: data.user.id,
             full_name: email.split('@')[0],
-            role: 'teacher' // Default to teacher for now
+            role: 'teacher' // Default to teacher for now, can be a toggle in UI later
           });
+          await fetchProfile(data.user.id);
         }
         alert('Check your email for the confirmation link!');
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
         if (error) throw error;
+        if (data.user) {
+          await fetchProfile(data.user.id);
+        }
         setViewState('teacher_dashboard');
       }
     } catch (error: any) {
@@ -333,7 +359,13 @@ function App() {
       {/* LANDING VIEW */}
       {viewState === 'landing' && (
         <div className="landing-page">
-          <DemoOne onLaunch={() => setViewState('teacher_dashboard')} theme={theme} />
+          <DemoOne onLaunch={() => {
+            if (session) {
+              setViewState(userRole === 'teacher' ? 'teacher_dashboard' : 'student_quiz');
+            } else {
+              setViewState('auth');
+            }
+          }} theme={theme} />
           
           <div className="container">
             {/* PLATFORM EMPHASIS / IMPACT SECTION */}
