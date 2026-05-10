@@ -72,8 +72,10 @@ function App() {
       setSession(session);
       if (session) {
         fetchProfile(session.user.id);
+        setViewState(prev => (prev === 'landing' || prev === 'auth' ? 'generating' : prev)); // Show loading/generating while profile fetches
       } else {
         setUserRole(null);
+        setViewState('landing');
       }
     });
 
@@ -106,7 +108,7 @@ function App() {
         setViewState('learning_style_quiz');
       } else {
         setViewState(prev => {
-          if (prev === 'landing' || prev === 'auth') {
+          if (prev === 'landing' || prev === 'auth' || prev === 'generating') {
             return data.role === 'teacher' ? 'teacher_dashboard' : 'student_dashboard';
           }
           return prev;
@@ -564,7 +566,7 @@ function App() {
       )}
 
       {/* LANDING VIEW */}
-      {viewState === 'landing' && (
+      {viewState === 'landing' && !session && (
         <div className="landing-page">
           <DemoOne onLaunch={() => {
             if (session) {
