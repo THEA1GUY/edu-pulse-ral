@@ -7,7 +7,7 @@ import Switch from '@/components/ui/switch';
 import ButtonSocialIconDemo from '@/components/ui/social-icon';
 import logo from './assets/logo.jpg';
 import { supabase } from '@/lib/supabase';
-import { Session } from '@supabase/supabase-js';
+import type { Session } from '@supabase/supabase-js';
 
 type QuizState = 'landing' | 'auth' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights';
 
