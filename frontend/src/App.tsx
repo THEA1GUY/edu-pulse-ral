@@ -9,7 +9,7 @@ import logo from './assets/logo.jpg';
 import { supabase } from '@/lib/supabase';
 import type { Session } from '@supabase/supabase-js';
 
-type QuizState = 'landing' | 'auth' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights';
+type QuizState = 'landing' | 'auth' | 'teacher_dashboard' | 'generating' | 'student_quiz' | 'grading' | 'results' | 'insights' | 'learning_style_quiz';
 
 interface Question {
   id: number;
@@ -17,6 +17,7 @@ interface Question {
   options: string[];
   correctAnswerIndex: number;
   translation?: string;
+  visualPrompt?: string;
 }
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
   const [difficulty, setDifficulty] = useState('Intermediate');
   const [targetLanguage, setTargetLanguage] = useState('Hausa');
   const [isBilingual, setIsBilingual] = useState(false);
+  const [questionType, setQuestionType] = useState<'objective' | 'essay'>('objective');
   
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
@@ -38,6 +40,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [userRole, setUserRole] = useState<'teacher' | 'student' | null>(null);
+  const [learningStyle, setLearningStyle] = useState<'visual' | 'auditory' | 'reading' | 'kinesthetic' | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -80,8 +83,12 @@ function App() {
     
     if (!error && data) {
       setUserRole(data.role as 'teacher' | 'student');
-      // Auto-redirect to dashboard if they are already logged in on landing
-      if (viewState === 'landing' || viewState === 'auth') {
+      setLearningStyle(data.learning_style as any);
+      
+      // If student hasn't taken the learning style quiz, send them there
+      if (data.role === 'student' && !data.learning_style) {
+        setViewState('learning_style_quiz');
+      } else if (viewState === 'landing' || viewState === 'auth') {
         setViewState(data.role === 'teacher' ? 'teacher_dashboard' : 'student_quiz');
       }
     }
@@ -143,6 +150,25 @@ function App() {
     }
   };
 
+  const handleSetLearningStyle = async (style: 'visual' | 'auditory' | 'reading' | 'kinesthetic') => {
+    if (!session) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ learning_style: style })
+        .eq('id', session.user.id);
+      
+      if (error) throw error;
+      setUserRole('student');
+      setViewState('student_quiz');
+    } catch (error: any) {
+      console.error('Failed to set learning style:', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     setViewState('landing');
@@ -172,88 +198,68 @@ function App() {
     }
 
     setViewState('generating');
-    
+    setLoading(true);
     try {
-      // 1. Create the Quiz Entry
-      const { data: quiz, error: quizError } = await supabase
+      // 1. Call the Edge Function
+      const { data: aiData, error: aiError } = await supabase.functions.invoke('generate-quiz', {
+        body: { 
+          topic, 
+          difficulty, 
+          language: targetLanguage, 
+          isBilingual,
+          questionType 
+        }
+      });
+
+      if (aiError) throw aiError;
+      const aiQuestions = aiData.questions;
+
+      // 2. Create the Quiz record
+      const { data: quizData, error: quizError } = await supabase
         .from('quizzes')
         .insert({
           teacher_id: session.user.id,
-          topic: topic,
-          difficulty: difficulty as any,
+          topic,
+          difficulty,
           language: targetLanguage,
-          is_bilingual: isBilingual
+          isBilingual
         })
         .select()
         .single();
 
       if (quizError) throw quizError;
 
-      // 2. Generate Questions (Mock AI logic but real DB insert)
-      const mockQuestions = [
-        {
-          quiz_id: quiz.id,
-          question_text: `In the process of photosynthesis, what is the primary role of chlorophyll?`,
-          translation_text: `A cikin tsarin photosynthesis, mene ne babban aikin chlorophyll?`,
-          options: [
-            "To absorb water from the soil",
-            "To capture light energy from the sun",
-            "To convert oxygen into carbon dioxide",
-            "To act as a structural component of the plant cell"
-          ],
-          correct_answer_index: 1
-        },
-        {
-          quiz_id: quiz.id,
-          question_text: "Which of the following is considered a product of the light-dependent reactions?",
-          translation_text: "Wanne ne daga cikin waɗannan ake ɗauka a matsayin samfurin halayen dogaro da haske?",
-          options: [
-            "Glucose",
-            "Carbon dioxide",
-            "ATP and NADPH",
-            "Water"
-          ],
-          correct_answer_index: 2
-        },
-        {
-          quiz_id: quiz.id,
-          question_text: "Where precisely does the Calvin cycle take place inside the chloroplast?",
-          translation_text: "A ina ne ainihin zagayowar Calvin ke faruwa a cikin chloroplast?",
-          options: [
-            "Thylakoid membrane",
-            "Outer membrane",
-            "Stroma",
-            "Granum"
-          ],
-          correct_answer_index: 2
-        }
-      ];
+      // 3. Create the Question records
+      const questionsToInsert = aiQuestions.map((q: any) => ({
+        quiz_id: quizData.id,
+        question_text: q.question_text,
+        translation_text: q.translation_text,
+        options: q.options || [],
+        correct_answer_index: q.correct_answer_index || 0
+      }));
 
-      const { data: questionsData, error: questionsError } = await supabase
+      const { error: questionsError } = await supabase
         .from('questions')
-        .insert(mockQuestions)
-        .select();
+        .insert(questionsToInsert);
 
       if (questionsError) throw questionsError;
 
-      // Map DB questions back to local state format
-      setQuestions(questionsData.map(q => ({
-        id: q.id,
-        quizId: q.quiz_id,
+      // 4. Update local state
+      setQuestions(aiQuestions.map((q: any, idx: number) => ({
+        id: idx,
         text: q.question_text,
+        options: q.options || [],
+        correctAnswerIndex: q.correct_answer_index || 0,
         translation: q.translation_text,
-        options: q.options,
-        correctAnswerIndex: q.correct_answer_index
+        visualPrompt: q.visual_prompt
       })));
-      
-      setViewState('student_quiz');
-      setCurrentQuestionIdx(0);
-      setAnswers({});
 
-    } catch (error: any) {
-      console.error("Error generating quiz:", error.message);
-      alert("Failed to generate quiz in database. Make sure you have run the schema SQL.");
       setViewState('teacher_dashboard');
+    } catch (error: any) {
+      console.error('Generation failed:', error.message);
+      alert('Generation failed: ' + error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -355,6 +361,29 @@ function App() {
           </div>
         </div>
       </nav>
+
+      {/* LEARNING STYLE QUIZ */}
+      {viewState === 'learning_style_quiz' && (
+        <div className="container animate-in" style={{maxWidth: '800px', padding: '8rem 2rem'}}>
+          <div className="glass-panel text-center">
+            <div className="badge-ai mb-6">Student Onboarding</div>
+            <h2 className="section-title" style={{fontSize: '2.5rem'}}>How do you learn best?</h2>
+            <p className="section-subtitle">Take this 30-second quiz to personalize your EDU•PULSE experience.</p>
+            
+            <div className="learning-quiz-container text-left mt-8">
+              <div className="mb-8">
+                <h3 className="text-lg font-bold mb-4">1. When learning something new, I prefer to...</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <button className="btn-secondary" onClick={() => handleSetLearningStyle('visual')}>See a diagram or video</button>
+                  <button className="btn-secondary" onClick={() => handleSetLearningStyle('auditory')}>Listen to an explanation</button>
+                  <button className="btn-secondary" onClick={() => handleSetLearningStyle('reading')}>Read a textbook or article</button>
+                  <button className="btn-secondary" onClick={() => handleSetLearningStyle('kinesthetic')}>Try it out myself</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* LANDING VIEW */}
       {viewState === 'landing' && (
@@ -715,6 +744,17 @@ function App() {
               </div>
             </div>
             <div className="question-card">
+              {learningStyle === 'visual' && questions[currentQuestionIdx].visualPrompt && (
+                <div className="visual-aid mb-6 overflow-hidden rounded-xl border border-glass-border">
+                  <img 
+                    src={`https://image.pollinations.ai/prompt/${encodeURIComponent(questions[currentQuestionIdx].visualPrompt || '')}?width=1024&height=512&nologo=true&model=flux`} 
+                    alt="Educational illustration"
+                    style={{width: '100%', height: 'auto', display: 'block'}}
+                    className="animate-in"
+                  />
+                  <div className="p-2 text-[10px] text-center opacity-50 uppercase tracking-widest">AI Generated Visual Aid</div>
+                </div>
+              )}
               <h3 className="question-text">{questions[currentQuestionIdx].text}</h3>
               {isBilingual && (
                 <div style={{marginTop: '-1rem', marginBottom: '2rem', padding: '1rem', background: 'rgba(99, 102, 241, 0.05)', borderRadius: '12px', color: 'var(--primary)', fontStyle: 'italic', fontSize: '1.1rem'}}>

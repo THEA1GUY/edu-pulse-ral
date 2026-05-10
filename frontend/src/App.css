@@ -733,3 +733,27 @@ input:checked + .slider:before { transform: translateX(26px); }
   .step-divider { width: 100%; height: 1px; }
   .landing-page { gap: 6rem; }
 }
+
+.btn-toggle {
+  padding: 0.75rem 1.5rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--glass-border);
+  color: var(--text-muted);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: 1;
+}
+
+.btn-toggle.active {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  border-color: transparent;
+  color: white;
+  box-shadow: 0 8px 24px -8px var(--primary);
+}
+
+.btn-toggle:hover:not(.active) {
+  border-color: var(--primary);
+  color: white;
+}
