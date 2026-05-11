@@ -204,7 +204,7 @@ function App() {
 
 
 
-  const fetchStudents = async (userId: string, classCode?: string) => {
+  const fetchStudents = async (userId: string, classCode?: string | null) => {
     let query = supabase
       .from('profiles')
       .select('*')
@@ -217,7 +217,12 @@ function App() {
     }
 
     const { data, error } = await query;
-    if (!error && data) setStudents(data);
+    if (error) {
+      console.error('Failed to fetch students:', error.message, error.details);
+    } else {
+      console.log('Fetched students:', data?.length, data);
+      setStudents(data || []);
+    }
   };
 
   const fetchQuizzes = async () => {
@@ -924,6 +929,22 @@ function App() {
           ) : (
             <main className="glass-panel">
               <div style={{display: 'flex', flexDirection: 'column', gap: '1.5rem'}}>
+                {students.length === 0 ? (
+                  <div style={{padding: '3rem', textAlign: 'center'}}>
+                    <svg width="48" height="48" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24" style={{margin: '0 auto 1rem', display: 'block', opacity: 0.4}}>
+                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                    </svg>
+                    <h3 style={{fontWeight: 700, marginBottom: '0.5rem'}}>No Students Yet</h3>
+                    <p style={{color: 'var(--text-muted)', fontSize: '0.9rem', marginBottom: '1rem'}}>
+                      Students will appear here once they sign up and join your class.
+                    </p>
+                    {classCode && (
+                      <div style={{display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(99, 102, 241, 0.1)', padding: '0.75rem 1.25rem', borderRadius: '100px', border: '1px solid rgba(99, 102, 241, 0.2)', fontSize: '0.85rem'}}>
+                        Share your class code: <strong style={{color: 'var(--primary)'}}>{classCode}</strong>
+                      </div>
+                    )}
+                  </div>
+                ) : (
                 <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem'}}>
                   {students.map(student => (
                     <div key={student.id} className="student-card" style={{
@@ -971,6 +992,7 @@ function App() {
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             </main>
           )}
